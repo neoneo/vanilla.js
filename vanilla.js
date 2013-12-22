@@ -91,10 +91,19 @@
 	function voidMethod(name) {
 		vanilla.prototype[name] = function () {
 			var splat = arguments;
-			this.forEach(function (element) {
-				if (name in element) {
-					element[name].apply(element, splat);
+			this.forEach(function (node) {
+				if (name in node) {
+					node[name].apply(node, splat);
 				}
+			});
+		}
+	}
+
+	function mapMethod(name) {
+		vanilla.prototype[name] = function () {
+			var splat = arguments;
+			return this.map(function (node) {
+				return name in node ? node[name].apply(node, splat) : undefined;
 			});
 		}
 	}
@@ -105,8 +114,8 @@
 	function vanillaFlatMapMethod(name) {
 		vanilla.prototype[name] = function () {
 			var splat = arguments;
-			return vanilla(this.flatMap(function (element) {
-				return name in element ? element[name].apply(element, splat) : undefined;
+			return vanilla(this.flatMap(function (node) {
+				return name in node ? node[name].apply(node, splat) : undefined;
 			}));
 		}
 	}
@@ -131,21 +140,10 @@
 			});
 		},
 
-		cloneNode: function (deep) {
-			return this.map(function (node) {
-				return node.cloneNode(deep);
-			});
-		},
-
 		contains: function (otherNode) {
+			// Since otherNode can be contained by only one ancestor node, return true if one of the nodes contains it.
 			return this.some(function (node) {
 				return node.contains(otherNode);
-			});
-		},
-
-		hasChildNodes: function () {
-			return this.every(function (node) {
-				return node.hasChildNodes();
 			});
 		},
 
@@ -197,20 +195,8 @@
 
 		// ELEMENT METHODS
 
-		getClientRects: function () {
-			return this.map(function (element) {
-				return element.getClientRects();
-			});
-		},
-
-		hasAttribute: function (name) {
-			return this.every(function (element) {
-				return element.hasAttribute(name);
-			});
-		},
-
 		matches: function (selector) {
-			return this.every(function (element) {
+			return this.map(function (element) {
 				return element.webkitMatchesSelector ? element.webkitMatchesSelector(selector) :
 					element.mozMatchesSelector ? element.mozMatchesSelector(selector) :
 					element.msMatchesSelecter ? element.msMatchesSelector(selector) :
@@ -234,6 +220,12 @@
 	("addEventListener,insertAdjacentHTML,remove,removeAttribute,removeEventListener,setAttribute").split(",")
 		.forEach(function (methodName) {
 			voidMethod(methodName);
+		});
+
+	// MAP METHODS
+	("cloneNode,hasChildNodes,getClientRects,hasAttribute").split(",")
+		.forEach(function (methodName) {
+			mapMethod(methodName);
 		});
 
 	// VANILLA FLATMAP METHODS
