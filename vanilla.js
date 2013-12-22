@@ -1,6 +1,4 @@
-(function () {
-
-	var root = this;
+(function (root) {
 
 	function flatmap(callback) {
 		return this.map(callback)
@@ -17,7 +15,7 @@
 			var result = flatmap.call(this, function (element) {
 				return element[propertyName];
 			});
-			return wrap ? new Vanilla(result) : result;
+			return wrap ? Vanilla(result) : result;
 		}
 	}
 
@@ -151,7 +149,7 @@
 					return elementMatches(element, by);
 				}
 
-			return new Vanilla(Array.prototype.filter.call(this, predicate));
+			return Vanilla(Array.prototype.filter.call(this, predicate));
 		},
 
 		first: function () {
@@ -241,16 +239,16 @@
 
 		// ATTRIBUTES
 
-		set cssText (cssText) {
+		set cssText(value) {
 			this.collection.forEach(function (element) {
-				element.style.cssText = cssText;
+				element.style.cssText = value;
 			});
 		}
 
 	};
 
 	// PROPERTIES
-	("anmation,animation-delay,animation-direction,animation-duration,animation-fill-mode,animation-iteration-count,animation-name," +
+	("animation,animation-delay,animation-direction,animation-duration,animation-fill-mode,animation-iteration-count,animation-name," +
 		"animation-play-state,animation-timing-function,background,background-attachment,background-clip,background-color," +
 		"background-image,background-origin,background-position,background-repeat,background-size,border,border-bottom,border-bottom-color," +
 		"border-bottom-left-radius,border-bottom-right-radius,border-bottom-style,border-bottom-width,border-collapse,border-color," +
@@ -267,7 +265,6 @@
 					return index === 0 ? part : part.charAt(0).toUpperCase() + part.slice(1);
 				}).join("");
 
-			console.log(propertyName);
 			Object.defineProperty(Style.prototype, propertyName, {
 				get: function () {
 					return this.getPropertyValue(cssPropertyName);
@@ -275,7 +272,7 @@
 				set: function (value) {
 					this.setProperty(cssPropertyName, value);
 				}
-			})
+			});
 		});
 
 	root.$ = Vanilla;
