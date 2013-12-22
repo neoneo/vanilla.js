@@ -5,9 +5,9 @@ A library that lets the standards DOM API act on collections of nodes.
 
 Examples:
 
-- `$("li").style.position = "absolute";`
-- `$("li").addEventListener("click", fn, false);`
-- `$("li").classList.toggle("active");`
+    $("li").style.position = "absolute";
+    $("li").addEventListener("click", fn, false);
+    $("li").classList.toggle("active");
 
 Work in progress.
 
