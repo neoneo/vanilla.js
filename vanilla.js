@@ -4,59 +4,6 @@
 		_$ = this.$,
 		_vanilla = this.vanilla;
 
-	function flatmap(callback) {
-		return this.map(callback)
-			.reduce(function (result, elements) {
-				return result.concat(elements);
-			}, [])
-			.filter(function (element) {
-				return element !== null && element !== undefined;
-			});
-	}
-
-	function propertyGetter(propertyName, wrap) {
-		return function () {
-			var result = flatmap.call(this, function (element) {
-				return element[propertyName];
-			});
-			return wrap ? vanilla(result) : result;
-		}
-	}
-
-	function propertySetter(propertyName) {
-		return function (value) {
-			this.forEach(function (element) {
-				element[propertyName] = value;
-			});
-		}
-	}
-
-	function mapProperty(object, name, get, set, wrap) {
-		Object.defineProperty(object, name, {
-			get: get ? propertyGetter(name, wrap) : undefined,
-			set: set ? propertySetter(name) : undefined,
-			configurable: false
-		});
-	}
-
-	function elementMatches(element, selector) {
-		return element.webkitMatchesSelector ? element.webkitMatchesSelector(selector) :
-			element.mozMatchesSelector ? element.mozMatchesSelector(selector) :
-			element.msMatchesSelecter ? element.msMatchesSelector(selector) :
-			undefined;
-	}
-
-	function mapMethod(object, name) {
-		Object.defineProperty(object, name, {
-			value: function () {
-				var splat = arguments;
-				this.forEach(function (element) {
-					element[name].apply(element, splat);
-				});
-			}
-		});
-	}
-
 	function vanilla() {
 
 		if (typeof arguments[0] ===  "string") {
@@ -65,13 +12,13 @@
 			var selector = arguments[0], context = arguments[1];
 			var nodeList = (context || document).querySelectorAll(selector);
 			//var nodeArray = Array.prototype.slice.call(nodeList);
-			nodeList.__proto__ = prototype;
+			nodeList.__proto__ = vanilla.prototype;
 			return nodeList;
 
 		} else if (Array.isArray(arguments[0])) {
 
 			var nodeArray = Array.prototype.slice.call(arguments[0]);
-			nodeArray.__proto__ = prototype;
+			nodeArray.__proto__ = vanilla.prototype;
 			return nodeArray;
 
 		} else if (arguments[0].nodeType && arguments[0].nodeType === 1) {
@@ -89,62 +36,170 @@
 		return vanilla;
 	}
 
-	// The Vanilla prototype.
-	var prototype = {
+	// Utility functions for adding properties and methods to the vanilla prototype.
+
+	/**
+	 * Returns a getter function for the property name. If wrap is true, the getter returns a vanilla object.
+	 */
+	function getter(propertyName, wrap) {
+		return function () {
+			var result = this.map(function (element) {
+				return element[propertyName];
+			});
+			return wrap ? vanilla(result) : result;
+		}
+	}
+
+	/**
+	 * Returns a setter function for the property name.
+	 * A setter accepts a string or an array of strings. If the value is a string, all elements will have the property
+	 * set to that string. If the value is an array, the elements will have the property value taken from the array at the
+	 * corresponding position, if defined.
+	 */
+	function setter(propertyName) {
+		return function (value) {
+			if (typeof value === "string") {
+				this.forEach(function (element) {
+					element[propertyName] = value;
+				});
+			} else if (Array.isArray(value)) {
+				var length = value.length;
+				this.every(function (element, index) {
+					if (index < length) {
+						element[propertyName] = value[index];
+						return true;
+					}
+					return false;
+				});
+			}
+		}
+	}
+
+	/**
+	 * Defines a property on the vanilla prototype.
+	 */
+	function property(name, get, set, wrap) {
+		Object.defineProperty(vanilla.prototype, name, {
+			get: get ? getter(name, wrap) : undefined,
+			set: set ? setter(name) : undefined
+		});
+	}
+
+	/**
+	 * Defines a method that returns void.
+	 */
+	function voidMethod(name) {
+		vanilla.prototype[name] = function () {
+			var splat = arguments;
+			this.forEach(function (element) {
+				if (name in element) {
+					element[name].apply(element, splat);
+				}
+			});
+		}
+	}
+
+	/**
+	 * Defines a method that returns a vanilla object.
+	 */
+	function vanillaFlatMapMethod(name) {
+		vanilla.prototype[name] = function () {
+			var splat = arguments;
+			return vanilla(this.flatMap(function (element) {
+				return name in element ? element[name].apply(element, splat) : undefined;
+			}));
+		}
+	}
+
+	// The vanilla prototype. Most properties and methods are created using the utility functions, but some don't fit in the patterns.
+	vanilla.prototype = {
 
 		__proto__: Array.prototype,
 
-		// MAPPED METHODS
+		flatMap: function (callback) {
+			return this.map(callback)
+				.reduce(function (result, elements) {
+					return elements ? result.concat(elements) : result;
+				}, []);
+		},
 
-		addEventListener: function (type, callback, useCapture) {
-			this.forEach(function (element) {
-				element.addEventListener(type, callback, useCapture);
+		// NODE METHODS
+
+		appendChild: function (child) {
+			return this.map(function (node, index) {
+				return node.appendChild(index === 0 ? child : child.cloneNode(true));
 			});
 		},
 
-		removeEventListener: function (type, callback, useCapture) {
-			this.forEach(function (element) {
-				element.removeEventListener(type, callback, useCapture);
+		cloneNode: function (deep) {
+			return this.map(function (node) {
+				return node.cloneNode(deep);
 			});
 		},
 
-		getElementsByClassName: function (className) {
-			return flatmap.call(this, function (element) {
-				return element.getElementsByClassName(className);
+		contains: function (otherNode) {
+			return this.some(function (node) {
+				return node.contains(otherNode);
 			});
 		},
 
-		getElementsByTagName: function (tagName) {
-			return flatmap.call(this, function (element) {
-				return element.getElementsByTagName(tagName);
+		hasChildNodes: function () {
+			return this.every(function (node) {
+				return node.hasChildNodes();
 			});
 		},
 
-		querySelector: function (selector) {
-			return flatmap.call(this, function (element) {
-				return element.querySelector(selector);
+		insertBefore: function (newNode, referenceNode) {
+			referenceNode = referenceNode || null;
+			var position = -1;
+			if (this.length > 1 && referenceNode) {
+				position = referenceNode.parentNode.childNodes.indexOf(referenceNode);
+			}
+			return this.map(function (node, index) {
+				if (index === 0) {
+					return node.insertBefore(newNode, referenceNode);
+				} else {
+					return node.insertBefore(newNode.cloneNode(true), node.childNodes[position] || null);
+				}
 			});
 		},
 
-		querySelectorAll: function (selector) {
-			return flatmap.call(this, function (element) {
-				return element.querySelectorAll(selector);
-			})
+		removeChild: function (child) {
+			var position = -1;
+			if (this.length > 1) {
+				position = child.parentNode.childNodes.indexOf(child);
+			}
+			return this.map(function (node, index) {
+				if (index === 0) {
+					return node.removeChild(child);
+				} else {
+					var removeNode = node.childNodes[position];
+					return removeNode ? node.removeChild(removeNode) : undefined;
+				}
+			});
 		},
 
-		get classList() {
-			return new ClassList(this);
+		replaceChild: function (newChild, oldChild) {
+			var position = -1;
+			if (this.length > 1) {
+				position = oldChild.parentNode.childNodes.indexOf(oldChild);
+			}
+			return this.map(function (node, index) {
+				if (index === 0) {
+					return node.replaceChild(newChild, oldChild);
+				} else {
+					var replaceNode = node.childNodes[position];
+					return replaceNode ? node.replaceChild(newChild.cloneNode(true), replaceNode) : undefined;
+				}
+			});
+
 		},
 
-		get style() {
-			return new Style(this);
-		},
+		// ELEMENT METHODS
 
-		// PREDICATES
-
-		matches: function (selector) {
-			return this.every(function (element) {
-				return elementMatches(element, selector);
+		getClientRects: function () {
+			return this.map(function (element) {
+				return element.getClientRects();
 			});
 		},
 
@@ -154,52 +209,61 @@
 			});
 		},
 
-		// JQUERY LIKE METHODS
-		filter: function (by) {
-			var predicate = typeof by === "function" ?
-				by : function (element) {
-					return elementMatches(element, by);
-				}
-
-			return vanilla(Array.prototype.filter.call(this, predicate));
+		matches: function (selector) {
+			return this.every(function (element) {
+				return element.webkitMatchesSelector ? element.webkitMatchesSelector(selector) :
+					element.mozMatchesSelector ? element.mozMatchesSelector(selector) :
+					element.msMatchesSelecter ? element.msMatchesSelector(selector) :
+					undefined;
+			});
 		},
 
-		first: function () {
-			return this[0];
+		// PROPERTIES
+
+		get classList() {
+			return "_classList" in this ? this._classList : this._classList = new ClassList(this);
 		},
 
-		last: function () {
-			var length = this.length;
-			return length > 0 ? this[this.length - 1] : undefined;
-		},
-
-		get: function (index) {
-			return this[index];
+		get style() {
+			return new Style(this);
 		}
 
 	};
 
-	// MAPPED METHODS
-	("remove,removeAttribute,setAttribute").split(",")
+	// VOID METHODS
+	("addEventListener,insertAdjacentHTML,remove,removeAttribute,removeEventListener,setAttribute").split(",")
 		.forEach(function (methodName) {
-			mapMethod(prototype, methodName);
+			voidMethod(methodName);
+		});
+
+	// VANILLA FLATMAP METHODS
+	("getElementsByClassName,getElementsByTagName,querySelector,querySelectorAll").split(",")
+		.forEach(function (methodName) {
+			vanillaFlatMapMethod(methodName);
 		});
 
 	// MAPPED PROPERTIES
+	// These properties only have getters, and return a new vanilla object:
 	("childNodes,firstChild,lastChild,nextSibling,previousSibling,parentNode," +
 		"children,firstElementChild,lastElementChild,nextElementSibling,previousElementSibling,parentElement").split(",")
 		.forEach(function (propertyName) {
-			// These properties only have getters, and return a new Vanilla object.
-			mapProperty(prototype, propertyName, true, false, true);
+			property(propertyName, true, false, true);
 		});
 
-	("className,textContent,innerHTML").split(",")
+	// These properties only have getters, and return an array:
+	("nodeName,nodeType,childElementCount,clientHeight,clientLeft,clientTop,clientWidth,scrollHeight,scrollWidth,tagName").split(",")
 		.forEach(function (propertyName) {
-			// The properties have getters and setters, and return an array.
-			mapProperty(prototype, propertyName, true, true, false);
+			property(propertyName, true, false, false);
 		});
 
-	// ClassList
+	// These properties have getters and setters, and return an array:
+	("nodeValue,textContent,className,id,innerHTML,outerHTML,scrollLeft,scrollTop").split(",")
+		.forEach(function (propertyName) {
+			property(propertyName, true, true, false);
+		});
+
+	// ClassList object ===========================================================================
+
 	function ClassList(collection) {
 		this.collection = collection;
 	}
@@ -219,10 +283,16 @@
 			this.collection.forEach(function (element) {
 				element.classList.toggle(className);
 			});
+		},
+		contains: function (className) {
+			return this.collection.map(function (element) {
+				return element.classList.contains(className);
+			});
 		}
 	}
 
-	// Style
+	// Style object ===============================================================================
+
 	function Style(collection) {
 		this.collection = collection;
 	}
@@ -230,6 +300,18 @@
 	Style.prototype = {
 
 		// METHODS
+
+		getPropertyPriority: function (propertyName) {
+			return this.collection.map(function (element) {
+				return element.style.getPropertyPriority(propertyName);
+			});
+		},
+
+		getPropertyValue: function (propertyName) {
+			return this.collection.map(function (element) {
+				return element.style.getPropertyValue(propertyName);
+			});
+		},
 
 		removeProperty: function (propertyName) {
 			this.collection.forEach(function (element) {
@@ -243,13 +325,14 @@
 			});
 		},
 
-		getPropertyValue: function (propertyName) {
-			return flatmap.call(this.collection, function (element) {
-				return element.style.getPropertyValue(propertyName);
-			});
-		},
 
 		// ATTRIBUTES
+
+		get cssText() {
+			return this.collection.map(function (element) {
+				return element.style.cssText;
+			});
+		},
 
 		set cssText(value) {
 			this.collection.forEach(function (element) {
@@ -259,8 +342,9 @@
 
 	};
 
-	// PROPERTIES
-	("animation,animation-delay,animation-direction,animation-duration,animation-fill-mode,animation-iteration-count,animation-name," +
+	// CSS PROPERTIES
+	("align-content,align-items,align-self,animation,animation-delay,animation-direction,animation-duration,animation-fill-mode," +
+		"animation-iteration-count,animation-name," +
 		"animation-play-state,animation-timing-function,background,background-attachment,background-clip,background-color," +
 		"background-image,background-origin,background-position,background-repeat,background-size,border,border-bottom,border-bottom-color," +
 		"border-bottom-left-radius,border-bottom-right-radius,border-bottom-style,border-bottom-width,border-collapse,border-color," +
@@ -268,12 +352,22 @@
 		"border-left-color,border-left-style,border-left-width,border-radius,border-right-border-right-color,border-right-style," +
 		"border-right-width,border-spacing,border-style,border-top,border-top-color,border-top-left-radius,border-top-right-radius," +
 		"border-top-style,border-top-width,border-width,bottom,box-shadow,box-sizing,break-after,break-before,caption-side,clip,clip-path," +
-		"color,columns,column-count,column-fill,column-gap,column-rule,column-rule-color,column-rule-style,column-rule-width,column-span" +
-		"column-width,content,counter-increment"
+		"color,columns,column-count,column-fill,column-gap,column-rule,column-rule-color,column-rule-style,column-rule-width,column-span," +
+		"column-width,content,counter-increment,counter-reset,cursor,direction,display,empty-cells,filter,flex,flex-basis,flex-direction," +
+		"flex-flow,flex-grow,flex-shrink,flex-wrap,float,font,font-family,font-feature-settings,font-size,font-size-adjust,font-stretch," +
+		"font-style,font-variant,font-weight,height,image-rendering,image-orientation,ime-mode,justify-content,left,letter-spacing," +
+		"line-height,list-style,list-style-image,list-style-position,list-style-type,margin,margin-bottom,margin-left,margin-right," +
+		"margin-top,max-height,max-width,min-height,min-width,opacity,order,orphans,outline,outline-color,outline-offset,outline-style," +
+		"outline-width,overflow,overflow-wrap,overflow-x,overflow-y,padding,padding-bottom,padding-left,padding-right,padding-top," +
+		"page-break-after,page-break-before,page-break-inside,perspective,perspective-origin,pointer-events,position,quotes,resize," +
+		"right,table-layout,tab-size,text-align,text-align-last,text-decoration,text-decoration-color,text-decoration-line," +
+		"text-decoration-style,text-indent,text-overflow,text-rendering,text-shadow,text-transform,text-underline-position,top,transform," +
+		"transform-origin,transform-style,transition,transition-delay,transition-duration,transition-property,transition-timing-function," +
+		"unicode-bidi,unicode-range,vertical-align,visibility,white-space,widows,width,word-break,word-spacing,word-wrap,writing-mode,z-index,zoom"
 		).split(",")
 		.forEach(function (cssPropertyName) {
-			var propertyName = cssPropertyName.split("-")
-				.map(function (part, index) {
+			var propertyName = cssPropertyName === "float" ? "cssFloat" :
+				cssPropertyName.split("-").map(function (part, index) {
 					return index === 0 ? part : part.charAt(0).toUpperCase() + part.slice(1);
 				}).join("");
 
@@ -282,7 +376,18 @@
 					return this.getPropertyValue(cssPropertyName);
 				},
 				set: function (value) {
-					this.setProperty(cssPropertyName, value);
+					if (typeof value === "string") {
+						this.setProperty(cssPropertyName, value);
+					} else if (Array.isArray(value)) {
+						var length = value.length;
+						this.collection.every(function (element, index) {
+							if (index < length) {
+								element.style.setProperty(cssPropertyName, value[index]);
+								return true;
+							}
+							return false;
+						});
+					}
 				}
 			});
 		});
