@@ -207,11 +207,11 @@
 		// PROPERTIES
 
 		get classList() {
-			return "_classList" in this ? this._classList : this._classList = new ClassList(this);
+			return this.hasOwnProperty("_classList") ? this._classList : this._classList = new ClassList(this);
 		},
 
 		get style() {
-			return new Style(this);
+			return this.hasOwnProperty("_style") ? this._style : this._style = new Style(this);
 		}
 
 	};
