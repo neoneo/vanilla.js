@@ -1,4 +1,8 @@
-(function (root) {
+(function () {
+
+	var root = this,
+		_$ = this.$,
+		_vanilla = this.vanilla;
 
 	function flatmap(callback) {
 		return this.map(callback)
@@ -15,7 +19,7 @@
 			var result = flatmap.call(this, function (element) {
 				return element[propertyName];
 			});
-			return wrap ? Vanilla(result) : result;
+			return wrap ? vanilla(result) : result;
 		}
 	}
 
@@ -53,7 +57,7 @@
 		});
 	}
 
-	function Vanilla() {
+	function vanilla() {
 
 		if (typeof arguments[0] ===  "string") {
 
@@ -61,24 +65,32 @@
 			var selector = arguments[0], context = arguments[1];
 			var nodeList = (context || document).querySelectorAll(selector);
 			//var nodeArray = Array.prototype.slice.call(nodeList);
-			nodeList.__proto__ = Vanilla.prototype;
+			nodeList.__proto__ = prototype;
 			return nodeList;
 
 		} else if (Array.isArray(arguments[0])) {
 
 			var nodeArray = Array.prototype.slice.call(arguments[0]);
-			nodeArray.__proto__ = Vanilla.prototype;
+			nodeArray.__proto__ = prototype;
 			return nodeArray;
 
 		} else if (arguments[0].nodeType && arguments[0].nodeType === 1) {
-			return Vanilla([arguments[0]]);
+			return vanilla([arguments[0]]);
 		} else {
 			throw "Don't know what to do";
 		}
 
 	}
 
-	Vanilla.prototype = {
+	vanilla.noConflict = function () {
+		root.$ = _$;
+		root.vanilla = _vanilla;
+
+		return vanilla;
+	}
+
+	// The Vanilla prototype.
+	var prototype = {
 
 		__proto__: Array.prototype,
 
@@ -149,7 +161,7 @@
 					return elementMatches(element, by);
 				}
 
-			return Vanilla(Array.prototype.filter.call(this, predicate));
+			return vanilla(Array.prototype.filter.call(this, predicate));
 		},
 
 		first: function () {
@@ -170,7 +182,7 @@
 	// MAPPED METHODS
 	("remove,removeAttribute,setAttribute").split(",")
 		.forEach(function (methodName) {
-			mapMethod(Vanilla.prototype, methodName);
+			mapMethod(prototype, methodName);
 		});
 
 	// MAPPED PROPERTIES
@@ -178,13 +190,13 @@
 		"children,firstElementChild,lastElementChild,nextElementSibling,previousElementSibling,parentElement").split(",")
 		.forEach(function (propertyName) {
 			// These properties only have getters, and return a new Vanilla object.
-			mapProperty(Vanilla.prototype, propertyName, true, false, true);
+			mapProperty(prototype, propertyName, true, false, true);
 		});
 
 	("className,textContent,innerHTML").split(",")
 		.forEach(function (propertyName) {
 			// The properties have getters and setters, and return an array.
-			mapProperty(Vanilla.prototype, propertyName, true, true, false);
+			mapProperty(prototype, propertyName, true, true, false);
 		});
 
 	// ClassList
@@ -275,6 +287,6 @@
 			});
 		});
 
-	root.$ = Vanilla;
+	root.$ = root.vanilla = vanilla;
 
 }).call(this);
