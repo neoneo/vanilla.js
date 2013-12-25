@@ -10,13 +10,15 @@
 
 			// We assume this is a selector. The context is an element that can be passed in as an optional 2nd argument.
 			var selector = arguments[0], context = arguments[1];
-			var nodeList = (context || document).querySelectorAll(selector);
-			//var nodeArray = Array.prototype.slice.call(nodeList);
-			nodeList.__proto__ = vanilla.prototype;
-			return nodeList;
+			var nodeList = context ? context.filter(function (element) {
+				return elementMatches(element, selector);
+			}) : document.querySelectorAll(selector);
+			var nodeArray = Array.prototype.slice.call(nodeList);
+			nodeArray.__proto__ = vanilla.prototype;
+			return nodeArray;
 
-		} else if (Array.isArray(arguments[0])) {
-
+		} else if (typeof arguments[0].length !== "undefined") {
+			// Anything that has a length is treated as an array.
 			var nodeArray = Array.prototype.slice.call(arguments[0]);
 			nodeArray.__proto__ = vanilla.prototype;
 			return nodeArray;
@@ -81,7 +83,8 @@
 	function property(name, get, set, wrap) {
 		Object.defineProperty(vanilla.prototype, name, {
 			get: get ? getter(name, wrap) : undefined,
-			set: set ? setter(name) : undefined
+			set: set ? setter(name) : undefined,
+			configurable: true // We must be able to override this.
 		});
 	}
 
@@ -120,10 +123,25 @@
 		}
 	}
 
+	function elementMatches(element, selector) {
+		return element.webkitMatchesSelector ? element.webkitMatchesSelector(selector) :
+			element.mozMatchesSelector ? element.mozMatchesSelector(selector) :
+			element.msMatchesSelecter ? element.msMatchesSelector(selector) :
+			undefined;
+	}
+
 	// The vanilla prototype. Most properties and methods are created using the utility functions, but some don't fit in the patterns.
 	vanilla.prototype = {
 
 		__proto__: Array.prototype,
+
+		one: function () {
+			if (arguments.length === 0) {
+				return one(this);
+			} else {
+				return one(arguments[0], this);
+			}
+		},
 
 		flatMap: function (callback) {
 			return this.map(callback)
@@ -197,10 +215,7 @@
 
 		matches: function (selector) {
 			return this.map(function (element) {
-				return element.webkitMatchesSelector ? element.webkitMatchesSelector(selector) :
-					element.mozMatchesSelector ? element.mozMatchesSelector(selector) :
-					element.msMatchesSelecter ? element.msMatchesSelector(selector) :
-					undefined;
+				return elementMatches(element, selector);
 			});
 		},
 
@@ -257,27 +272,27 @@
 	// ClassList object ===========================================================================
 
 	function ClassList(collection) {
-		this.collection = collection;
+		this._collection = collection;
 	}
 
 	ClassList.prototype = {
 		add: function (className) {
-			this.collection.forEach(function (element) {
+			this._collection.forEach(function (element) {
 				element.classList.add(className);
 			});
 		},
 		remove: function (className) {
-			this.collection.forEach(function (element) {
+			this._collection.forEach(function (element) {
 				element.classList.remove(className);
 			});
 		},
 		toggle: function (className) {
-			this.collection.forEach(function (element) {
+			this._collection.forEach(function (element) {
 				element.classList.toggle(className);
 			});
 		},
 		contains: function (className) {
-			return this.collection.map(function (element) {
+			return this._collection.map(function (element) {
 				return element.classList.contains(className);
 			});
 		}
@@ -286,7 +301,7 @@
 	// Style object ===============================================================================
 
 	function Style(collection) {
-		this.collection = collection;
+		this._collection = collection;
 	}
 
 	Style.prototype = {
@@ -294,25 +309,25 @@
 		// METHODS
 
 		getPropertyPriority: function (propertyName) {
-			return this.collection.map(function (element) {
+			return this._collection.map(function (element) {
 				return element.style.getPropertyPriority(propertyName);
 			});
 		},
 
 		getPropertyValue: function (propertyName) {
-			return this.collection.map(function (element) {
+			return this._collection.map(function (element) {
 				return element.style.getPropertyValue(propertyName);
 			});
 		},
 
 		removeProperty: function (propertyName) {
-			this.collection.forEach(function (element) {
+			this._collection.forEach(function (element) {
 				element.style.removeProperty(propertyName);
 			});
 		},
 
 		setProperty: function (propertyName, value, priority) {
-			this.collection.forEach(function (element) {
+			this._collection.forEach(function (element) {
 				element.style.setProperty(propertyName, value, priority);
 			});
 		},
@@ -321,13 +336,13 @@
 		// ATTRIBUTES
 
 		get cssText() {
-			return this.collection.map(function (element) {
+			return this._collection.map(function (element) {
 				return element.style.cssText;
 			});
 		},
 
 		set cssText(value) {
-			this.collection.forEach(function (element) {
+			this._collection.forEach(function (element) {
 				element.style.cssText = value;
 			});
 		}
@@ -335,7 +350,7 @@
 	};
 
 	// CSS PROPERTIES
-	("align-content,align-items,align-self,animation,animation-delay,animation-direction,animation-duration,animation-fill-mode," +
+	var cssProperties = ("align-content,align-items,align-self,animation,animation-delay,animation-direction,animation-duration,animation-fill-mode," +
 		"animation-iteration-count,animation-name," +
 		"animation-play-state,animation-timing-function,background,background-attachment,background-clip,background-color," +
 		"background-image,background-origin,background-position,background-repeat,background-size,border,border-bottom,border-bottom-color," +
@@ -356,34 +371,142 @@
 		"text-decoration-style,text-indent,text-overflow,text-rendering,text-shadow,text-transform,text-underline-position,top,transform," +
 		"transform-origin,transform-style,transition,transition-delay,transition-duration,transition-property,transition-timing-function," +
 		"unicode-bidi,unicode-range,vertical-align,visibility,white-space,widows,width,word-break,word-spacing,word-wrap,writing-mode,z-index,zoom"
-		).split(",")
-		.forEach(function (cssPropertyName) {
-			var propertyName = cssPropertyName === "float" ? "cssFloat" :
-				cssPropertyName.split("-").map(function (part, index) {
-					return index === 0 ? part : part.charAt(0).toUpperCase() + part.slice(1);
-				}).join("");
+		).split(",");
+	var jsProperties = cssProperties.map(function (cssName) {
+		return cssName === "float" ? "cssFloat" :
+			cssName.split("-").map(function (part, index) {
+				return index === 0 ? part : part.charAt(0).toUpperCase() + part.slice(1);
+			}).join("");
+	})
 
-			Object.defineProperty(Style.prototype, propertyName, {
-				get: function () {
-					return this.getPropertyValue(cssPropertyName);
-				},
-				set: function (value) {
-					if (typeof value === "string") {
-						this.setProperty(cssPropertyName, value);
-					} else if (Array.isArray(value)) {
-						var length = value.length;
-						this.collection.every(function (element, index) {
-							if (index < length) {
-								element.style.setProperty(cssPropertyName, value[index]);
-								return true;
-							}
-							return false;
-						});
-					}
+	cssProperties.forEach(function (cssName, index) {
+		var jsName = jsProperties[index];
+		Object.defineProperty(Style.prototype, jsName, {
+			get: function () {
+				return this.getPropertyValue(cssName);
+			},
+			set: function (value) {
+				if (typeof value === "string") {
+					this.setProperty(cssName, value);
+				} else if (Array.isArray(value)) {
+					var length = value.length;
+					this._collection.every(function (element, index) {
+						if (index < length) {
+							element.style.setProperty(cssName, value[index]);
+							return true;
+						}
+						return false;
+					});
 				}
-			});
+			}
+		});
+	});
+
+	// VANILLA SINGLE ELEMENT =====================================================================
+
+	function one() {
+
+		var nodeArray = vanilla.apply(this, arguments);
+
+		nodeArray.__proto__ = one.prototype;
+		nodeArray.splice(1, Infinity);
+
+		return nodeArray;
+	}
+
+	one.prototype = {
+
+		__proto__: vanilla.prototype,
+
+		// For style and classList we still return wrappers, to handle the case when there are no elements.
+		get style() {
+			return this.hasOwnProperty("_style") ? this._style : this._style = new StyleOne(this);
+		},
+
+		get classList() {
+			return this.hasOwnProperty("_classList") ? this._classList : this._classList = new ClassListOne(this);
+		}
+
+	}
+
+	function getterOne(propertyName) {
+		return function () {
+			return this[0] ? this[0][propertyName] : undefined;
+		}
+	}
+
+	function propertyOne(name, get, set) {
+		Object.defineProperty(one.prototype, name, {
+			get: get ? getterOne(name) : undefined,
+			set: set ? setter(name) : undefined, // We can't override setters or access them in the parent prototype, so we recreate the same accessor here.
+			configurable: true
+		});
+	}
+
+	// Create readonly properties.
+	("nodeName,nodeType,childElementCount,clientHeight,clientLeft,clientTop,clientWidth,scrollHeight,scrollWidth,tagName").split(",")
+		.forEach(function (propertyName) {
+			propertyOne(propertyName, true, false);
 		});
 
+	// Create mutable properties.
+	("nodeValue,textContent,className,id,innerHTML,outerHTML,scrollLeft,scrollTop").split(",")
+		.forEach(function (propertyName) {
+			propertyOne(propertyName, true, true);
+		});
+
+	// ClassListOne object
+	function ClassListOne(collection) {
+		this._collection = collection;
+	}
+
+	ClassListOne.prototype = {
+
+		__proto__: ClassList.prototype,
+
+		contains: function (className) {
+			return ClassList.prototype.contains.call(this, className)[0];
+		}
+
+	};
+
+	// StyleOne object
+
+	function StyleOne(collection) {
+		this._collection = collection;
+	}
+
+	StyleOne.prototype = {
+
+		__proto__: Style.prototype,
+
+		getPropertyPriority: function (propertyName) {
+			return Style.prototype.getPropertyPriority.call(this, propertyName)[0];
+		},
+
+		getPropertyValue: function (propertyName) {
+			return Style.prototype.getPropertyValue.call(this, propertyName)[0];
+		}
+
+	};
+
+	cssProperties.forEach(function (cssName, index) {
+		// Getter and setter.
+		var jsName = jsProperties[index];
+		Object.defineProperty(StyleOne.prototype, jsName, {
+			get: function () {
+				return this.getPropertyValue(cssName);
+			},
+			set: function (value) {
+				this.setProperty(cssName, value);
+			}
+		});
+	});
+
+	// EXPORT =====================================================================================
+
 	root.$ = root.vanilla = vanilla;
+	vanilla.one = one;
+	root.$$ = one;
 
 }).call(this);
