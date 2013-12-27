@@ -2,6 +2,7 @@
 
 	var root = this,
 		_$ = this.$,
+		_$$ = this.$$,
 		_vanilla = this.vanilla;
 
 	function vanilla() {
@@ -13,17 +14,17 @@
 			var nodeList = context ? context.filter(function (element) {
 				return elementMatches(element, selector);
 			}) : document.querySelectorAll(selector);
-			var nodeArray = Array.prototype.slice.call(nodeList);
+			var nodeArray = toArray(nodeList);
 			nodeArray.__proto__ = vanilla.prototype;
 			return nodeArray;
 
-		} else if (typeof arguments[0].length !== "undefined") {
+		} else if (isArrayLike(arguments[0])) {
 			// Anything that has a length is treated as an array.
-			var nodeArray = Array.prototype.slice.call(arguments[0]);
+			var nodeArray = toArray(arguments[0]);
 			nodeArray.__proto__ = vanilla.prototype;
 			return nodeArray;
 
-		} else if (arguments[0].nodeType && arguments[0].nodeType === 1) {
+		} else if (arguments[0].nodeType) {
 			return vanilla([arguments[0]]);
 		} else {
 			throw "Don't know what to do";
@@ -33,6 +34,7 @@
 
 	vanilla.noConflict = function () {
 		root.$ = _$;
+		root.$$ = _$$;
 		root.vanilla = _vanilla;
 
 		return vanilla;
@@ -40,14 +42,28 @@
 
 	// Utility functions for adding properties and methods to the vanilla prototype.
 
+	function isArrayLike(item) {
+		return typeof item !== "undefined" && typeof item !== "string" &&
+			typeof item.length !== "undefined" && typeof item.nodeType === "undefined";
+	}
+
+	function toArray(arrayLike) {
+		return Array.prototype.slice.call(arrayLike);
+	}
+
 	/**
 	 * Returns a getter function for the property name. If wrap is true, the getter returns a vanilla object.
 	 */
-	function getter(propertyName, wrap) {
+	function getter(propertyName, wrap, unique) {
 		return function () {
-			var result = this.map(function (element) {
+			var result = this.flatMap(function (element) {
 				return element[propertyName];
 			});
+			if (unique) {
+				result = result.filter(function (element, index) {
+					return result.indexOf(element) === index;
+				});
+			}
 			return wrap ? vanilla(result) : result;
 		}
 	}
@@ -60,18 +76,14 @@
 	 */
 	function setter(propertyName) {
 		return function (value) {
-			if (typeof value === "string") {
+			if (isArrayLike(value)) {
+				var length = value.length;
+				this.forEach(function (element, index) {
+					element[propertyName] = value[index % length];
+				});
+			} else {
 				this.forEach(function (element) {
 					element[propertyName] = value;
-				});
-			} else if (Array.isArray(value)) {
-				var length = value.length;
-				this.every(function (element, index) {
-					if (index < length) {
-						element[propertyName] = value[index];
-						return true;
-					}
-					return false;
 				});
 			}
 		}
@@ -80,9 +92,9 @@
 	/**
 	 * Defines a property on the vanilla prototype.
 	 */
-	function property(name, get, set, wrap) {
+	function property(name, get, set, wrap, unique) {
 		Object.defineProperty(vanilla.prototype, name, {
-			get: get ? getter(name, wrap) : undefined,
+			get: get ? getter(name, wrap, unique) : undefined,
 			set: set ? setter(name) : undefined,
 			configurable: true // We must be able to override this.
 		});
@@ -145,17 +157,20 @@
 
 		flatMap: function (callback) {
 			return this.map(callback)
-				.reduce(function (result, elements) {
-					return elements ? result.concat(elements) : result;
+				.reduce(function (result, item) {
+					return item !== null && typeof item !== "undefined" ?
+						result.concat(
+							isArrayLike(item) ? toArray(item) : item
+						) : result;
 				}, []);
 		},
 
 		// NODE METHODS
 
 		appendChild: function (child) {
-			return this.map(function (node, index) {
+			return vanilla(this.map(function (node, index) {
 				return node.appendChild(index === 0 ? child : child.cloneNode(true));
-			});
+			}));
 		},
 
 		contains: function (otherNode) {
@@ -171,13 +186,13 @@
 			if (this.length > 1 && referenceNode) {
 				position = referenceNode.parentNode.childNodes.indexOf(referenceNode);
 			}
-			return this.map(function (node, index) {
+			return vanilla(this.map(function (node, index) {
 				if (index === 0) {
 					return node.insertBefore(newNode, referenceNode);
 				} else {
 					return node.insertBefore(newNode.cloneNode(true), node.childNodes[position] || null);
 				}
-			});
+			}));
 		},
 
 		removeChild: function (child) {
@@ -185,14 +200,14 @@
 			if (this.length > 1) {
 				position = child.parentNode.childNodes.indexOf(child);
 			}
-			return this.map(function (node, index) {
+			return vanilla(this.map(function (node, index) {
 				if (index === 0) {
 					return node.removeChild(child);
 				} else {
 					var removeNode = node.childNodes[position];
 					return removeNode ? node.removeChild(removeNode) : undefined;
 				}
-			});
+			}));
 		},
 
 		replaceChild: function (newChild, oldChild) {
@@ -200,14 +215,14 @@
 			if (this.length > 1) {
 				position = oldChild.parentNode.childNodes.indexOf(oldChild);
 			}
-			return this.map(function (node, index) {
+			return vanilla(this.map(function (node, index) {
 				if (index === 0) {
 					return node.replaceChild(newChild, oldChild);
 				} else {
 					var replaceNode = node.childNodes[position];
 					return replaceNode ? node.replaceChild(newChild.cloneNode(true), replaceNode) : undefined;
 				}
-			});
+			}));
 
 		},
 
@@ -219,6 +234,13 @@
 			});
 		},
 
+		// non-standard
+		getComputedStyle: function (pseudoElement) {
+			return this.map(function (element) {
+				return root.getComputedStyle(element, pseudoElement || null);
+			});
+		},
+
 		// PROPERTIES
 
 		get classList() {
@@ -227,6 +249,12 @@
 
 		get style() {
 			return this.hasOwnProperty("_style") ? this._style : this._style = new Style(this);
+		},
+
+		// ARRAY METHODS
+		// Vanilla.filter should return a new vanilla object.
+		filter: function (callback) {
+			return vanilla(Array.prototype.filter.call(this, callback));
 		}
 
 	};
@@ -234,40 +262,52 @@
 	// VOID METHODS
 	("addEventListener,insertAdjacentHTML,remove,removeAttribute,removeEventListener,setAttribute").split(",")
 		.forEach(function (methodName) {
-			voidMethod(methodName);
-		});
+		voidMethod(methodName);
+	});
 
 	// MAP METHODS
 	("cloneNode,hasChildNodes,getClientRects,hasAttribute").split(",")
 		.forEach(function (methodName) {
-			mapMethod(methodName);
-		});
+		mapMethod(methodName);
+	});
 
 	// VANILLA FLATMAP METHODS
 	("getElementsByClassName,getElementsByTagName,querySelector,querySelectorAll").split(",")
 		.forEach(function (methodName) {
-			vanillaFlatMapMethod(methodName);
-		});
+		vanillaFlatMapMethod(methodName);
+	});
 
 	// MAPPED PROPERTIES
 	// These properties only have getters, and return a new vanilla object:
-	("childNodes,firstChild,lastChild,nextSibling,previousSibling,parentNode," +
-		"children,firstElementChild,lastElementChild,nextElementSibling,previousElementSibling,parentElement").split(",")
-		.forEach(function (propertyName) {
-			property(propertyName, true, false, true);
-		});
+	var singleNode = ("firstChild,lastChild,nextSibling,previousSibling," +
+		"firstElementChild,lastElementChild,nextElementSibling,previousElementSibling").split(",");
+	singleNode.forEach(function (propertyName) {
+		property(propertyName, true, false, true, false);
+	});
+
+	// These properties only have getters, and return a new vanilla object:
+	var multipleNode = ("childNodes,children").split(",");
+	multipleNode.forEach(function (propertyName) {
+		property(propertyName, true, false, true, false);
+	});
+
+	// These properties only have getters, and return a new vanilla object containing unique elements:
+	var singleUniqueNode = ("parentNode,parentElement").split(",");
+	singleUniqueNode.forEach(function (propertyName) {
+		property(propertyName, true, false, true, true);
+	});
 
 	// These properties only have getters, and return an array:
-	("nodeName,nodeType,childElementCount,clientHeight,clientLeft,clientTop,clientWidth,scrollHeight,scrollWidth,tagName").split(",")
-		.forEach(function (propertyName) {
-			property(propertyName, true, false, false);
-		});
+	var readonly = ("nodeName,nodeType,childElementCount,clientHeight,clientLeft,clientTop,clientWidth,scrollHeight,scrollWidth,tagName").split(",");
+	readonly.forEach(function (propertyName) {
+		property(propertyName, true, false, false, false);
+	});
 
 	// These properties have getters and setters, and return an array:
-	("nodeValue,textContent,className,id,innerHTML,outerHTML,scrollLeft,scrollTop").split(",")
-		.forEach(function (propertyName) {
-			property(propertyName, true, true, false);
-		});
+	var mutable = ("nodeValue,textContent,className,id,innerHTML,outerHTML,scrollLeft,scrollTop").split(",");
+	mutable.forEach(function (propertyName) {
+		property(propertyName, true, true, false, false);
+	});
 
 	// ClassList object ===========================================================================
 
@@ -386,17 +426,13 @@
 				return this.getPropertyValue(cssName);
 			},
 			set: function (value) {
-				if (typeof value === "string") {
-					this.setProperty(cssName, value);
-				} else if (Array.isArray(value)) {
+				if (isArrayLike(value)) {
 					var length = value.length;
-					this._collection.every(function (element, index) {
-						if (index < length) {
-							element.style.setProperty(cssName, value[index]);
-							return true;
-						}
-						return false;
+					this._collection.forEach(function (element, index) {
+						element.style.setProperty(cssName, value[index % length]);
 					});
+				} else {
+					this.setProperty(cssName, value);
 				}
 			}
 		});
@@ -425,35 +461,47 @@
 
 		get classList() {
 			return this.hasOwnProperty("_classList") ? this._classList : this._classList = new ClassListOne(this);
+		},
+
+		getComputedStyle: function (pseudoElement) {
+			return vanilla.prototype.getComputedStyle.call(this, pseudoElement)[0];
+		},
+
+		matches: function (selector) {
+			return vanilla.prototype.matches.call(this, selector)[0] || undefined;
 		}
 
 	}
 
-	function getterOne(propertyName) {
+	function getterOne(propertyName, wrap) {
 		return function () {
-			return this[0] ? this[0][propertyName] : undefined;
+			var result = this[0] ? this[0][propertyName] : undefined;
+			return wrap ? vanilla.one(result) : result;
 		}
 	}
 
-	function propertyOne(name, get, set) {
+	function propertyOne(name, get, set, wrap) {
 		Object.defineProperty(one.prototype, name, {
-			get: get ? getterOne(name) : undefined,
+			get: get ? getterOne(name, wrap) : undefined,
 			set: set ? setter(name) : undefined, // We can't override setters or access them in the parent prototype, so we recreate the same accessor here.
 			configurable: true
 		});
 	}
 
 	// Create readonly properties.
-	("nodeName,nodeType,childElementCount,clientHeight,clientLeft,clientTop,clientWidth,scrollHeight,scrollWidth,tagName").split(",")
-		.forEach(function (propertyName) {
-			propertyOne(propertyName, true, false);
-		});
+	readonly.forEach(function (propertyName) {
+		propertyOne(propertyName, true, false, false);
+	});
 
 	// Create mutable properties.
-	("nodeValue,textContent,className,id,innerHTML,outerHTML,scrollLeft,scrollTop").split(",")
-		.forEach(function (propertyName) {
-			propertyOne(propertyName, true, true);
-		});
+	mutable.forEach(function (propertyName) {
+		propertyOne(propertyName, true, true, false);
+	});
+
+	// Create properties that return a single element:
+	singleNode.concat(singleUniqueNode).forEach(function (propertyName) {
+		propertyOne(propertyName, true, false, true);
+	});
 
 	// ClassListOne object
 	function ClassListOne(collection) {
