@@ -41,6 +41,23 @@ Returns the first element in the set that matches the selector, wrapped in a van
 
 Reverts the `vanilla`, `$` and `$$` variables to their previous state and returns the vanilla function.
 
+By default, only a very limited subset of css properties is supported, because most css properties are never
+set directly through script, but only through setting a class. This list consists basically of only properties
+that are related to positioning:
+
+`bottom display float height left opacity position right top visibility width z-index`
+
+You can register additional properties though:
+
+`vanilla.registerCSSProperty(cssName)`
+
+Registers the property. E.g. `$.registerCSSProperty("text-decoration")`
+
+`vanilla.registerCSSProperties(cssNames)`
+
+Registers all properties (an array of css names).
+
+
 Single elements
 ---------------
 

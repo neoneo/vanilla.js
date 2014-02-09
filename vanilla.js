@@ -527,7 +527,7 @@
 		cssNames.forEach(vanilla.registerCSSProperty);
 	}
 
-	vanilla.registerCSSProperties(("bottom,cursor,display,float,height,left,opacity,position,right,top,visibility,width,z-index").split(","));
+	vanilla.registerCSSProperties(("bottom,display,float,height,left,opacity,position,right,top,visibility,width,z-index").split(","));
 
 	// EXPORT =====================================================================================
 
